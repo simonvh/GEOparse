@@ -628,7 +628,7 @@ class GSM(SimpleGEO):
                     for fqoption, fqvalue in iteritems(fastq_dump_options):
                         if fqvalue:
                             cmd += (" --%s %s" % (fqoption, fqvalue))
-                        else:
+                        elif fqvalue is None:
                             cmd += (" --%s" % fqoption)
                     cmd += " %s --outdir %s %s"
                     cmd = cmd % (ftype, directory_path, filepath)
