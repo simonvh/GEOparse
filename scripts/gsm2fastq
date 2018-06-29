@@ -49,6 +49,12 @@ if __name__ == "__main__":
             directory=args.outdir,
             filetype=args.filetype,
             aspera=os.environ.has_key("ASPERA_HOME"),
-            fastq_dump_options={'readids':False},
+            fastq_dump_options={
+            'split-files': None,
+            'readids': None,
+            'read-filter': 'pass',
+            'dumpbase': None,
+            'gzip': None
+            },
             )
     print "Supp_{}_{}".format(gsm.name, title)
