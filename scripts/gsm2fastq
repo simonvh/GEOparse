@@ -35,6 +35,14 @@ def parse(args):
                    metavar="TYPE",
                    default="fastq"
                    )
+    p.add_argument("-t", "--threads",
+                   dest="threads",
+                   help="number of threads (if parallel-fastq-dump is installed)",
+                   metavar="INT",
+                   type=int,
+                   default=4
+                   )
+
 
     return p.parse_args(args)
 
@@ -49,5 +57,6 @@ if __name__ == "__main__":
             directory=args.outdir,
             filetype=args.filetype,
             aspera="ASPERA_HOME" in os.environ,
+            threads=args.threads,
             )
     print("Supp_{}_{}".format(gsm.name, title))
