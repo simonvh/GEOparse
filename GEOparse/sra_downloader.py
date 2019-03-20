@@ -7,6 +7,7 @@ import json
 import glob
 import platform
 import subprocess as sp
+from xml.etree import ElementTree
 
 from Bio import Entrez
 from pandas import DataFrame, concat
@@ -16,6 +17,7 @@ try:
     from urllib.error import HTTPError
 except ImportError:
     from urllib2 import HTTPError
+import requests
 
 from . import utils
 from .logger import geoparse_logger as logger
@@ -76,29 +78,35 @@ class SRADownloader(object):
                         'readids': None,
                         'read-filter': 'pass',
                         'dumpbase': None,
-                        'gzip': None
+                'gzip': None
                     }
 
         Raises:
             :obj:`TypeError`: Type to download unknown
             :obj:`TypeError`: Wrong e-mail
         """
-        # Unpack arguments
-        self.gsm = gsm
-        self.email = email
-        # Retrieving output directory name
-
         if platform.system() == "Windows":
             name_regex = r'[\s\*\?\(\),\.\:\%\|\"\<\>]'
         else:
             name_regex = r'[\s\*\?\(\),\.;]'
-
-        self.directory = os.path.abspath(
-            os.path.join(directory, "%s_%s_%s" % (
+        
+        self.gsm = None
+        self.term = None
+        
+        # Unpack arguments
+        self.email = email
+        if type(gsm) == type(""):
+            self.term = gsm
+            self.directory = self.term
+        else:
+            self.gsm = gsm
+            # Retrieving output directory name
+            self.directory = os.path.abspath(
+                os.path.join(directory, "%s_%s_%s" % (
                 'Supp',
                 self.gsm.get_accession(),
                 re.sub(name_regex, '_', self.gsm.metadata['title'][0]))))
-
+      
         self.filetype = kwargs.get('filetype', 'fasta').lower()
         self.aspera = kwargs.get('aspera', False)
         self.keep_sra = kwargs.get('keep_sra', False)
@@ -124,11 +132,48 @@ class SRADownloader(object):
             raise TypeError('Provided e-mail (%s) is invalid' % self.email)
         Entrez.email = self.email
         self._paths_for_download = None
+        self._sample_table = None
+
+    @property
+    def sample_table(self):
+        """Retrieve sample table with download paths from SRA"""
+        if self._sample_table is None:
+            payload = {"save": "efetch","db": "sra","rettype" : "full", "retmode":"text", "term" : self.term };
+            r = requests.get('http://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi', params=payload)
+            e = ElementTree.fromstring(r.text)
+            
+            sample_info = []
+            for x in e.findall("EXPERIMENT_PACKAGE"):
+                for y in x.findall("Pool"):
+                    for z in y.findall("Member"):
+                        sample_accession = z.attrib["accession"]
+                        name = z.attrib['sample_name']
+                        title = z.attrib['sample_title']
+                for y in x.findall("RUN_SET"):
+                    for z in y.findall("RUN"):
+                        run_accession = z.attrib['accession']
+                sample_info.append([run_accession, sample_accession, name, title])
+            
+            if len(sample_info) == 0:
+                raise ValueError("No runs found for term {}".format(self.term))
+
+            sample_df = DataFrame(sample_info, columns=["run_accession", "sample_accession", "name", "title"])
+                                  
+            results = []
+            for acc in sample_df["run_accession"]:
+                results.append(Entrez.efetch(db="sra",rettype= "runinfo", retmode="text", id = acc ).read())
+                dfs_tmp = [DataFrame([i.split(',') for i in r.split('\n') if i != ''][1:],
+                   columns=[i.split(',') for i in r.split('\n') if i != ''][0]) for r in results]
+                self._sample_table = sample_df.set_index("run_accession").join(concat(dfs_tmp).set_index("Run"))
+        return self._sample_table
 
     @property
     def paths_for_download(self):
         """List of URLs available for downloading."""
         if self._paths_for_download is None:
+            if self.term:
+                return self.sample_table["download_path"]
+
             queries = list()
             try:
                 for sra in self.gsm.relations['SRA']:
@@ -221,14 +266,17 @@ class SRADownloader(object):
 
             sra_run = path.split("/")[-1]
             logger.info("Analysing %s" % sra_run)
-            url = type(self).FTP_ADDRESS_TPL.format(
-                range_subdir=sra_run[:6],
-                file_dir=sra_run)
+            if path.startswith("http://") or path.startswith("ftp://"):
+                url = path
+            else:
+                url = type(self).FTP_ADDRESS_TPL.format(
+                    range_subdir=sra_run[:6],
+                    file_dir=sra_run)
             logger.debug("URL: %s", url)
             filepath = os.path.abspath(
                 os.path.join(self.directory, "%s.sra" % sra_run))
             utils.download_from_url(
-                url,
+                path,
                 filepath,
                 aspera=self.aspera,
                 silent=self.silent,

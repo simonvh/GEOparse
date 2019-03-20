@@ -40,14 +40,24 @@ def parse(args):
 
 if __name__ == "__main__":
     args = parse(sys.argv[1:])
-    if not args.term.startswith("GSM"):
-        raise NotImplementedError("only GSM ids work for now!")
-    gsm = GEOparse.get_GEO(args.term)
-    title = gsm.metadata.get("title", [])[0]
-    gsm.download_SRA(
+    #if not args.term.startswith("GSE"):
+    #    raise NotImplementedError("only GSM ids work for now!")
+    if args.term.startswith("GSE"):
+        gse = GEOparse.get_GEO(args.term)
+        gse.download_SRA(
+            email=args.email, 
+            directory=args.outdir,
+            filetype=args.filetype,
+            aspera="ASPERA_HOME" in os.environ,
+        )
+    #title = gsm.metadata.get("title", [])[0]
+    else:
+        downloader = GEOparse.sra_downloader.SRADownloader(
+            args.term,
             args.email,
             directory=args.outdir,
             filetype=args.filetype,
             aspera="ASPERA_HOME" in os.environ,
             )
-    print("Supp_{}_{}".format(gsm.name, title))
+        downloader.download()
+    #print("Supp_{}_{}".format(gsm.name, title))
